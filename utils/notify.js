@@ -5,7 +5,9 @@ export const displayName = (user) =>
   user?.nickname || [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email;
 
 // แจ้งเตือนเข้ากลุ่ม LINE (ถ้าไม่ได้ตั้งค่า env ก็ข้ามไป) ไม่ให้ error กระทบ request หลัก
+// ปิดไว้ก่อน: ต้องตั้ง NOTIFY_ENABLED=true ถึงจะส่ง
 export const notify = async (message) => {
+  if (process.env.NOTIFY_ENABLED !== "true") return;
   if (!process.env.LINE_ACCESS_TOKEN_ASSISTANT || !process.env.LINE_GROUP_ID) return;
   try {
     await sendLineMessage(message);
