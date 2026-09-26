@@ -1,0 +1,283 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "mysql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// id ใช้ค่าเดียวกับ user ใน HomePass (มาจาก token ตอน bypass login)
+model User {
+  id        String   @id
+  email     String   @unique
+  firstName String?
+  lastName  String?
+  nickname  String? // แสดงแทนชื่อจริงทั้งระบบ
+  avatar    String?
+  role      Role     @default(USER)
+  exp       Int      @default(0)
+  level     Int      @default(1)
+  status    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdRewards Reward[]         @relation("RewardCreator")
+  createdQuests  Quest[]          @relation("QuestCreator")
+  eligibleQuests QuestAssignee[]
+  favoriteQuests QuestFavorite[]
+  runMembers     QuestRunMember[]
+  submittedRuns  QuestRun[]       @relation("RunSubmitter")
+  reviewedRuns   QuestRun[]       @relation("RunReviewer")
+  progressLogs   QuestProgress[]
+  giftBoxes      GiftBox[]
+}
+
+// คลังรางวัล: สร้างครั้งเดียว หยิบไปใส่ slot ของเควสไหนก็ได้
+model Reward {
+  id          String   @id @default(uuid())
+  title       String
+  description String?  @db.Text
+  imageUrl    String?
+  price       Int      @default(0) // มูลค่า (บาท) ใช้คิด exp และ rank ของเควส
+  isActive    Boolean  @default(true) // ลบแบบ soft เพราะอาจถูกใช้ในเควส/กล่องแล้ว
+  createdById String
+  createdBy   User     @relation("RewardCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questSlots   QuestReward[]
+  levelRewards LevelReward[]
+  giftItems    GiftBoxItem[]
+}
+
+// ตัวเควส (แม่แบบ) — การทำจริงแต่ละรอบอยู่ที่ QuestRun
+model Quest {
+  id             String    @id @default(uuid())
+  title          String
+  description    String?   @db.Text
+  type           QuestType @default(MAIN)
+  mode           QuestMode @default(SOLO)
+  openToAll      Boolean   @default(true) // true = ใครก็ได้, false = เฉพาะคนใน assignees
+  unit           String?
+  targetAmount   Int       @default(1)
+  requireProof   Boolean   @default(false)
+  minLevel       Int       @default(1)
+  expiresAt      DateTime? // หลังจากนี้รับเควสไม่ได้ และรอบที่ยังไม่ส่งจะหมดอายุ
+  boxExpireHours Int? // กล่องรางวัลหมดอายุหลังได้รับกี่ชั่วโมง (null = ไม่หมดอายุ)
+  totalValue     Int       @default(0) // มูลค่ารวมของ slot รางวัล (คำนวณตอนบันทึก)
+  exp            Int       @default(0) // คำนวณจาก totalValue
+  isActive       Boolean   @default(true) // false = ปิดเควส (ยังเก็บประวัติไว้)
+  createdById    String
+  createdBy      User      @relation("QuestCreator", fields: [createdById], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  assignees     QuestAssignee[]
+  rewards       QuestReward[]
+  attachments   Attachment[]
+  prerequisites QuestPrerequisite[] @relation("PrereqOf")
+  unlocks       QuestPrerequisite[] @relation("PrereqRequired")
+  favorites     QuestFavorite[]
+  runs          QuestRun[]
+
+  @@index([isActive, type])
+}
+
+// ผู้ที่เควสนี้เจาะจงให้ทำ (ใช้เมื่อ openToAll = false)
+model QuestAssignee {
+  questId String
+  quest   Quest  @relation(fields: [questId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([questId, userId])
+}
+
+// slot รางวัลของเควส (รางวัลเดียวกันใส่ซ้ำหลาย slot ได้)
+model QuestReward {
+  id        String @id @default(uuid())
+  questId   String
+  quest     Quest  @relation(fields: [questId], references: [id], onDelete: Cascade)
+  rewardId  String
+  reward    Reward @relation(fields: [rewardId], references: [id])
+  sortOrder Int    @default(0)
+
+  @@index([questId])
+}
+
+// ต้องทำ requiredQuest สำเร็จก่อน ถึงจะรับ quest ได้
+model QuestPrerequisite {
+  questId         String
+  quest           Quest  @relation("PrereqOf", fields: [questId], references: [id], onDelete: Cascade)
+  requiredQuestId String
+  requiredQuest   Quest  @relation("PrereqRequired", fields: [requiredQuestId], references: [id], onDelete: Cascade)
+
+  @@id([questId, requiredQuestId])
+}
+
+model QuestFavorite {
+  questId   String
+  quest     Quest    @relation(fields: [questId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([questId, userId])
+}
+
+// การทำเควส 1 รอบ
+// periodKey: เควสหลัก = "MAIN", เควสประจำวัน = "YYYY-MM-DD" (ตามเวลาไทย) -> วันใหม่รับใหม่ได้
+// ownerKey : SOLO = userId (ต่างคนต่างทำ), TEAM = "TEAM" (ทุกคนช่วยกันใน run เดียว)
+model QuestRun {
+  id            String    @id @default(uuid())
+  questId       String
+  quest         Quest     @relation(fields: [questId], references: [id], onDelete: Cascade)
+  periodKey     String
+  ownerKey      String
+  status        RunStatus @default(IN_PROGRESS)
+  currentAmount Int       @default(0)
+  expiresAt     DateTime? // เลยเวลานี้แล้วยังไม่ส่ง -> EXPIRED
+  submitNote    String?   @db.Text
+  submittedById String?
+  submittedBy   User?     @relation("RunSubmitter", fields: [submittedById], references: [id])
+  submittedAt   DateTime?
+  reviewComment String?   @db.Text
+  reviewedById  String?
+  reviewedBy    User?     @relation("RunReviewer", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  members      QuestRunMember[]
+  progressLogs QuestProgress[]
+  attachments  Attachment[] // หลักฐานที่แนบตอนกดทำเสร็จ
+  giftBoxes    GiftBox[]
+
+  @@unique([questId, periodKey, ownerKey])
+  @@index([status, expiresAt])
+}
+
+model QuestRunMember {
+  runId     String
+  run       QuestRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  expEarned Int      @default(0)
+  joinedAt  DateTime @default(now())
+
+  @@id([runId, userId])
+  @@index([userId])
+}
+
+// บันทึกความคืบหน้าแต่ละครั้ง เช่น "วันนี้ล้างจาน 2 ครั้ง" + รูปหลักฐาน
+model QuestProgress {
+  id          String   @id @default(uuid())
+  runId       String
+  run         QuestRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  amount      Int
+  note        String?  @db.Text
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  attachments Attachment[]
+}
+
+// ไฟล์แนบ (รูป/เอกสาร) ผูกกับอย่างใดอย่างหนึ่ง: เควส, progress หรือการส่งเควส
+model Attachment {
+  id         String         @id @default(uuid())
+  url        String         @db.Text
+  publicId   String?
+  name       String?
+  mimeType   String?
+  questId    String?
+  quest      Quest?         @relation(fields: [questId], references: [id], onDelete: Cascade)
+  progressId String?
+  progress   QuestProgress? @relation(fields: [progressId], references: [id], onDelete: Cascade)
+  runId      String?
+  run        QuestRun?      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  createdAt  DateTime       @default(now())
+}
+
+// รางวัลที่ admin ตั้งไว้ให้เมื่อเลเวลอัพถึง level นั้น
+model LevelReward {
+  id        String @id @default(uuid())
+  level     Int
+  rewardId  String
+  reward    Reward @relation(fields: [rewardId], references: [id])
+  sortOrder Int    @default(0)
+
+  @@index([level])
+}
+
+// กล่องของขวัญใน inventory: 1 เควสที่สำเร็จ (หรือ 1 ครั้งที่เลเวลอัพ) = 1 กล่อง
+model GiftBox {
+  id         String     @id @default(uuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id])
+  source     GiftSource
+  runId      String?
+  run        QuestRun?  @relation(fields: [runId], references: [id], onDelete: SetNull)
+  level      Int? // เลเวลที่ได้ (source = LEVEL_UP)
+  title      String // snapshot ชื่อเควส / "เลเวลอัพ Lv.x" เผื่อเควสถูกแก้ภายหลัง
+  totalValue Int        @default(0)
+  status     GiftStatus @default(UNOPENED)
+  expiresAt  DateTime? // ยังไม่เปิดแล้วเลยเวลานี้ -> EXPIRED (หายจาก inventory)
+  openedAt   DateTime?
+  createdAt  DateTime   @default(now())
+
+  items GiftBoxItem[]
+
+  @@index([userId, status])
+  @@index([status, expiresAt])
+}
+
+// ของในกล่อง (snapshot จาก Reward ตอนได้รับ)
+model GiftBoxItem {
+  id          String  @id @default(uuid())
+  boxId       String
+  box         GiftBox @relation(fields: [boxId], references: [id], onDelete: Cascade)
+  rewardId    String?
+  reward      Reward? @relation(fields: [rewardId], references: [id], onDelete: SetNull)
+  title       String
+  description String? @db.Text
+  imageUrl    String?
+  price       Int     @default(0)
+  sortOrder   Int     @default(0)
+}
+
+enum Role {
+  USER // ผู้ทำเควส
+  ADMIN // สร้างเควส/รางวัล ตรวจเควส กำหนดสิทธิ์ (และทำเควสได้เหมือน USER)
+}
+
+enum QuestType {
+  MAIN // เควสหลัก ทำได้ครั้งเดียว (ต่อคน หรือต่อทีม)
+  DAILY // เควสประจำวัน รับใหม่ได้ทุกวัน หมดอายุเมื่อจบวัน
+}
+
+enum QuestMode {
+  SOLO // ต่างคนต่างทำ ได้รางวัลของตัวเอง
+  TEAM // ช่วยกันทำ ความคืบหน้ารวมกัน สำเร็จแล้วทุกคนที่ร่วมได้รางวัล
+}
+
+enum RunStatus {
+  IN_PROGRESS // กำลังทำ (ถูกตีกลับก็กลับมาสถานะนี้)
+  SUBMITTED // ส่งแล้ว รอตรวจสอบ
+  COMPLETED // ผ่านการตรวจ ได้รางวัลแล้ว
+  EXPIRED // หมดเวลาก่อนส่ง
+}
+
+enum GiftSource {
+  QUEST
+  LEVEL_UP
+}
+
+enum GiftStatus {
+  UNOPENED
+  OPENED
+  EXPIRED
+}
