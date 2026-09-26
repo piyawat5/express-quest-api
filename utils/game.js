@@ -16,7 +16,11 @@ export const countActiveRuns = (userId, db = prisma) =>
   });
 
 // ส่งกล่องของขวัญเข้า inventory (snapshot ข้อมูลรางวัลไว้ เผื่อรางวัลถูกแก้/ลบภายหลัง)
-export const createGiftBox = (tx, { userId, source, runId = null, level = null, title, expiresAt = null, rewards }) =>
+// rewards = [{ ...reward, givenById }] ผู้ให้ของแต่ละชิ้น (ไม่ระบุ = ใช้ givenById ของกล่อง)
+export const createGiftBox = (
+  tx,
+  { userId, source, runId = null, level = null, title, expiresAt = null, givenById = null, rewards }
+) =>
   tx.giftBox.create({
     data: {
       userId,
@@ -33,14 +37,15 @@ export const createGiftBox = (tx, { userId, source, runId = null, level = null, 
           description: r.description,
           imageUrl: r.imageUrl,
           price: r.price,
+          givenById: r.givenById ?? givenById,
           sortOrder: i,
         })),
       },
     },
   });
 
-// เพิ่ม exp + เลเวลอัพ + แจกกล่องรางวัลเลเวลอัพของทุกเลเวลที่ข้ามไป
-// return { from, to } เมื่อเลเวลอัพ, null ถ้าไม่ขึ้น
+// เพิ่ม exp + เลเวลอัพ + แจกกล่องรางวัลเลเวลอัพ (ที่ตั้งไว้ให้ user คนนี้) ของทุกเลเวลที่ข้ามไป
+// return { from, to, boxes } เมื่อเลเวลอัพ, null ถ้าไม่ขึ้น
 export const grantExp = async (tx, userId, exp) => {
   const user = await tx.user.update({ where: { id: userId }, data: { exp: { increment: exp } } });
   const from = levelFromExp(user.exp - exp);
@@ -49,15 +54,19 @@ export const grantExp = async (tx, userId, exp) => {
   if (to <= from) return null;
 
   const levelRewards = await tx.levelReward.findMany({
-    where: { level: { gt: from, lte: to } },
+    where: { userId, level: { gt: from, lte: to } },
     include: { reward: true },
     orderBy: [{ level: "asc" }, { sortOrder: "asc" }],
   });
+  let boxes = 0;
   for (let level = from + 1; level <= to; level++) {
-    const rewards = levelRewards.filter((lr) => lr.level === level).map((lr) => lr.reward);
+    const rewards = levelRewards
+      .filter((lr) => lr.level === level)
+      .map((lr) => ({ ...lr.reward, givenById: lr.createdById }));
     if (rewards.length) {
       await createGiftBox(tx, { userId, source: "LEVEL_UP", level, title: `รางวัลเลเวลอัพ Lv.${level}`, rewards });
+      boxes++;
     }
   }
-  return { from, to };
+  return { from, to, boxes };
 };

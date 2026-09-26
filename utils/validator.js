@@ -65,7 +65,9 @@ export const nicknameSchema = object({
 });
 
 export const levelRewardSchema = object({
-  rewardIds: array(string()).max(20, "ใส่รางวัลได้สูงสุด 20 รายการ").required(),
+  userId: string().required("กรุณาเลือกผู้เล่น"),
+  level: number().integer("เลเวลไม่ถูกต้อง").min(2, "เลเวลไม่ถูกต้อง").required("กรุณาระบุเลเวล"),
+  rewardId: string().required("กรุณาเลือกรางวัล"),
 });
 
 export const validate = (schema) => async (req, res, next) => {

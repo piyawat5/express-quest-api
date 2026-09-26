@@ -47,7 +47,12 @@ import {
   submitRun,
 } from "../controllers/run.controller.js";
 import { getGiftBoxes, openGiftBox } from "../controllers/giftBox.controller.js";
-import { getLevelRewards, updateLevelRewards } from "../controllers/levelReward.controller.js";
+import { addLevelReward, deleteLevelReward, getLevelRewards } from "../controllers/levelReward.controller.js";
+import {
+  getNotifications,
+  readAllNotifications,
+  readNotification,
+} from "../controllers/notification.controller.js";
 
 const router = express.Router();
 const admin = [verifyToken, requireAdmin];
@@ -78,7 +83,8 @@ router.delete("/reward/delete/:id", admin, deleteReward);
 
 // ------------- level reward --------------
 router.get("/level-reward", verifyToken, getLevelRewards);
-router.put("/level-reward/:level", admin, validate(levelRewardSchema), updateLevelRewards);
+router.post("/level-reward", admin, validate(levelRewardSchema), addLevelReward);
+router.delete("/level-reward/:id", admin, deleteLevelReward);
 
 // ------------- quest (ตัวเควส) --------------
 router.get("/quest", verifyToken, getQuests);
@@ -104,5 +110,10 @@ router.post("/run/:id/abandon", verifyToken, abandonRun);
 // ------------- inventory (กล่องของขวัญ) --------------
 router.get("/inventory", verifyToken, getGiftBoxes);
 router.post("/inventory/:id/open", verifyToken, openGiftBox);
+
+// ------------- notification (กระดิ่งแจ้งเตือน) --------------
+router.get("/notification", verifyToken, getNotifications);
+router.post("/notification/read-all", verifyToken, readAllNotifications);
+router.post("/notification/:id/read", verifyToken, readNotification);
 
 export default router;

@@ -2,6 +2,7 @@ import prisma from "../config/prisma.js";
 import createError from "../utils/createError.js";
 import { countActiveRuns, isAdmin } from "../utils/game.js";
 import { questExp, questSlots } from "../utils/level.js";
+import { notifyUsers } from "../utils/notify.js";
 import { MAIN_PERIOD, periodKeyOf, runExpiresAt, todayKey } from "../utils/period.js";
 import { userSelect } from "./user.controller.js";
 
@@ -262,6 +263,13 @@ export const createQuest = async (req, res) => {
     },
   });
 
+  // แจ้งคนที่รับเควสนี้ได้ (เปิดให้ทุกคน = ทุกคน)
+  await notifyUsers(data.openToAll ? {} : assigneeIds, {
+    title: `📜 เควสใหม่: ${quest.title}`,
+    message: `+${exp} EXP${totalValue ? ` · รางวัลมูลค่า ฿${totalValue.toLocaleString("th-TH")}` : ""}`,
+    link: `/quest/${quest.id}`,
+    except: req.user.id,
+  });
   res.json({ data: quest });
 };
 

@@ -2,11 +2,11 @@ import prisma from "../config/prisma.js";
 import createError from "../utils/createError.js";
 import { notExpired } from "../utils/expire.js";
 import { isAdmin } from "../utils/game.js";
-import { displayName, notify } from "../utils/notify.js";
+import { displayName, notify, notifyUsers } from "../utils/notify.js";
 import { userSelect } from "./user.controller.js";
 
 const boxInclude = {
-  items: { orderBy: { sortOrder: "asc" } },
+  items: { include: { givenBy: { select: userSelect } }, orderBy: { sortOrder: "asc" } },
   run: { select: { id: true, quest: { select: { id: true, title: true, createdById: true } } } },
   user: { select: userSelect },
 };
@@ -45,5 +45,15 @@ export const openGiftBox = async (req, res) => {
   }
 
   notify(`🎁 ${displayName(req.user)} เปิดกล่อง "${box.title}" ได้รับ ${box.items.map((i) => i.title).join(", ")}`);
+
+  // ผู้ให้แต่ละคนเห็นเฉพาะของที่ตัวเองต้องเตรียมให้
+  for (const giverId of new Set(box.items.map((i) => i.givenById))) {
+    const items = box.items.filter((i) => i.givenById === giverId).map((i) => i.title);
+    await notifyUsers([giverId], {
+      title: `🎁 ${displayName(req.user)} เปิดกล่อง "${box.title}"`,
+      message: `เตรียมรางวัลให้ด้วยนะ: ${items.join(", ")}`,
+      except: req.user.id,
+    });
+  }
   res.json({ data: box });
 };

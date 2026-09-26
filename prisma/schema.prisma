@@ -23,15 +23,19 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  createdRewards Reward[]         @relation("RewardCreator")
-  createdQuests  Quest[]          @relation("QuestCreator")
-  eligibleQuests QuestAssignee[]
-  favoriteQuests QuestFavorite[]
-  runMembers     QuestRunMember[]
-  submittedRuns  QuestRun[]       @relation("RunSubmitter")
-  reviewedRuns   QuestRun[]       @relation("RunReviewer")
-  progressLogs   QuestProgress[]
-  giftBoxes      GiftBox[]
+  createdRewards    Reward[]         @relation("RewardCreator")
+  createdQuests     Quest[]          @relation("QuestCreator")
+  eligibleQuests    QuestAssignee[]
+  favoriteQuests    QuestFavorite[]
+  runMembers        QuestRunMember[]
+  submittedRuns     QuestRun[]       @relation("RunSubmitter")
+  reviewedRuns      QuestRun[]       @relation("RunReviewer")
+  progressLogs      QuestProgress[]
+  giftBoxes         GiftBox[]
+  levelRewards      LevelReward[]    @relation("LevelRewardReceiver")
+  givenLevelRewards LevelReward[]    @relation("LevelRewardGiver")
+  givenGiftItems    GiftBoxItem[]
+  notifications     Notification[]
 }
 
 // คลังรางวัล: สร้างครั้งเดียว หยิบไปใส่ slot ของเควสไหนก็ได้
@@ -202,15 +206,20 @@ model Attachment {
   createdAt  DateTime       @default(now())
 }
 
-// รางวัลที่ admin ตั้งไว้ให้เมื่อเลเวลอัพถึง level นั้น
+// รางวัลที่ admin ตั้งไว้ให้ user แต่ละคน เมื่อเลเวลอัพถึง level นั้น
 model LevelReward {
-  id        String @id @default(uuid())
-  level     Int
-  rewardId  String
-  reward    Reward @relation(fields: [rewardId], references: [id])
-  sortOrder Int    @default(0)
+  id          String   @id @default(uuid())
+  level       Int
+  userId      String // ผู้ได้รับ
+  user        User     @relation("LevelRewardReceiver", fields: [userId], references: [id], onDelete: Cascade)
+  rewardId    String
+  reward      Reward   @relation(fields: [rewardId], references: [id])
+  createdById String // ผู้ให้รางวัล
+  createdBy   User     @relation("LevelRewardGiver", fields: [createdById], references: [id])
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
 
-  @@index([level])
+  @@index([userId, level])
 }
 
 // กล่องของขวัญใน inventory: 1 เควสที่สำเร็จ (หรือ 1 ครั้งที่เลเวลอัพ) = 1 กล่อง
@@ -246,7 +255,23 @@ model GiftBoxItem {
   description String? @db.Text
   imageUrl    String?
   price       Int     @default(0)
+  givenById   String? // ผู้ให้รางวัล (เควส = คนสร้างเควส, เลเวลอัพ = คนที่ตั้งรางวัลเลเวลนั้น)
+  givenBy     User?   @relation(fields: [givenById], references: [id], onDelete: SetNull)
   sortOrder   Int     @default(0)
+}
+
+// แจ้งเตือนในเว็บ (กระดิ่งที่ topbar)
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String?   @db.Text
+  link      String? // path ในเว็บที่จะพาไปเมื่อกด เช่น /run/xxx
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }
 
 enum Role {

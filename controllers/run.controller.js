@@ -1,7 +1,7 @@
 import prisma from "../config/prisma.js";
 import createError from "../utils/createError.js";
 import { createGiftBox, grantExp, isAdmin } from "../utils/game.js";
-import { displayName, notify } from "../utils/notify.js";
+import { displayName, notify, notifyUsers } from "../utils/notify.js";
 import { userSelect } from "./user.controller.js";
 
 const questSummarySelect = {
@@ -15,6 +15,7 @@ const questSummarySelect = {
   totalValue: true,
   exp: true,
   boxExpireHours: true,
+  createdById: true,
   rewards: { include: { reward: true }, orderBy: { sortOrder: "asc" } },
 };
 
@@ -190,6 +191,15 @@ export const submitRun = async (req, res) => {
   });
 
   notify(`🎯 ${displayName(req.user)} ทำเควส "${quest.title}" เสร็จแล้ว รอตรวจสอบ`);
+  await notifyUsers(
+    { role: "ADMIN" },
+    {
+      title: `🎯 ${displayName(req.user)} ส่งเควสแล้ว`,
+      message: `"${quest.title}" รอตรวจสอบ`,
+      link: `/run/${run.id}`,
+      except: req.user.id,
+    }
+  );
   res.json({ message: "ส่งเควสแล้ว รอตรวจสอบ" });
 };
 
@@ -224,6 +234,7 @@ export const approveRun = async (req, res) => {
             runId: run.id,
             title: quest.title,
             expiresAt: boxExpiresAt,
+            givenById: quest.createdById,
             rewards,
           });
         }
@@ -247,6 +258,24 @@ export const approveRun = async (req, res) => {
     ].join("\n")
   );
 
+  const comment = req.body.comment ? ` · ${displayName(req.user)}: ${req.body.comment}` : "";
+  await notifyUsers(
+    run.members.map((m) => m.userId),
+    {
+      title: `✅ เควส "${quest.title}" ผ่านแล้ว!`,
+      message: `ได้รับ +${quest.exp} EXP${rewards.length ? " และกล่องของขวัญ 🎁" : ""}${comment}`,
+      link: rewards.length ? "/inventory" : `/run/${run.id}`,
+      except: req.user.id,
+    }
+  );
+  for (const l of levelUps) {
+    await notifyUsers([l.userId], {
+      title: `🎉 เลเวลอัพเป็น Lv.${l.to}!`,
+      message: l.boxes ? `ได้กล่องรางวัลเลเวลอัพ ${l.boxes} กล่อง 🎁` : null,
+      link: l.boxes ? "/inventory" : "/journey",
+    });
+  }
+
   res.json({ message: "ตรวจผ่านเรียบร้อย", data: { levelUps } });
 };
 
@@ -261,6 +290,15 @@ export const rejectRun = async (req, res) => {
     reviewedAt: new Date(),
   });
 
+  await notifyUsers(
+    run.members.map((m) => m.userId),
+    {
+      title: `↩️ เควส "${run.quest.title}" ถูกตีกลับ`,
+      message: `${displayName(req.user)}: ${req.body.comment}`,
+      link: `/run/${run.id}`,
+      except: req.user.id,
+    }
+  );
   res.json({ message: "ตีกลับเควสเรียบร้อย" });
 };
 
