@@ -143,6 +143,7 @@ model QuestRun {
   status        RunStatus @default(IN_PROGRESS)
   currentAmount Int       @default(0)
   expiresAt     DateTime? // เลยเวลานี้แล้วยังไม่ส่ง -> EXPIRED
+  note          String?   @db.Text // สมุดจดของรอบนี้ ผู้ร่วมทำพิมพ์อัปเดตได้ตลอด (ทีม = ใช้ร่วมกัน)
   submitNote    String?   @db.Text
   submittedById String?
   submittedBy   User?     @relation("RunSubmitter", fields: [submittedById], references: [id])

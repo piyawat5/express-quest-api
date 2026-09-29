@@ -56,6 +56,10 @@ export const submitSchema = object({
   attachments: array(attachmentSchema),
 });
 
+export const runNoteSchema = object({
+  note: string().max(10000, "บันทึกยาวได้ไม่เกิน 10,000 ตัวอักษร").nullable(),
+});
+
 export const rejectSchema = object({
   comment: string().trim().required("กรุณาระบุเหตุผล"),
 });

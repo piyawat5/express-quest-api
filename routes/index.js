@@ -11,6 +11,7 @@ import {
   questSchema,
   rejectSchema,
   rewardSchema,
+  runNoteSchema,
   submitSchema,
   validate,
 } from "../utils/validator.js";
@@ -45,6 +46,7 @@ import {
   getRuns,
   rejectRun,
   submitRun,
+  updateRunNote,
 } from "../controllers/run.controller.js";
 import { getGiftBoxes, openGiftBox } from "../controllers/giftBox.controller.js";
 import { addLevelReward, deleteLevelReward, getLevelRewards } from "../controllers/levelReward.controller.js";
@@ -102,6 +104,7 @@ router.get("/run", verifyToken, getRuns);
 router.get("/run/:id", verifyToken, getRunById);
 router.post("/run/:id/progress", verifyToken, validate(progressSchema), addProgress);
 router.delete("/run/:id/progress/:progressId", verifyToken, deleteProgress);
+router.put("/run/:id/note", verifyToken, validate(runNoteSchema), updateRunNote);
 router.post("/run/:id/submit", verifyToken, validate(submitSchema), submitRun);
 router.post("/run/:id/approve", admin, approveRun);
 router.post("/run/:id/reject", admin, validate(rejectSchema), rejectRun);

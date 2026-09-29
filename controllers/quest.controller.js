@@ -122,9 +122,18 @@ export const getQuests = async (req, res) => {
   res.json({ data: await withAvailability(quests, req.user), pagination: { total, page, size } });
 };
 
-// GET /quest/top?limit=10  เควสที่รางวัลมูลค่าสูงสุดที่ยังเปิดรับอยู่ตอนนี้ (หน้า dashboard)
+// เงื่อนไขใน buildAvailability ที่เช็คใน DB ได้: เลเวลไม่ถึง, ไม่ได้เปิดให้, รับรอบนี้ไปแล้ว = รับไม่ได้แน่ๆ
+const acceptableBy = (user) => ({
+  minLevel: { lte: user.level },
+  OR: [{ openToAll: true }, { assignees: { some: { userId: user.id } } }],
+  runs: { none: { periodKey: { in: [MAIN_PERIOD, todayKey()] }, members: { some: { userId: user.id } } } },
+});
+
+// GET /quest/top?limit=10&available=true  เควสที่รางวัลมูลค่าสูงสุดที่ยังเปิดรับอยู่ตอนนี้ (หน้า dashboard)
+// available=true = เฉพาะเควสที่ user คนนี้กดรับได้ตอนนี้
 export const getTopQuests = async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+  const onlyAvailable = req.query.available === "true";
 
   const quests = await prisma.quest.findMany({
     where: {
@@ -133,14 +142,18 @@ export const getTopQuests = async (req, res) => {
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       // เควสหลักแบบทีมที่ทำสำเร็จ/ส่งแล้ว ไม่เปิดรับอีก
       NOT: { type: "MAIN", mode: "TEAM", runs: { some: { status: { in: ["SUBMITTED", "COMPLETED"] } } } },
-      AND: [visibleTo(req.user)],
+      AND: [visibleTo(req.user), ...(onlyAvailable ? [acceptableBy(req.user)] : [])],
     },
     include: { ...questInclude, favorites: { where: { userId: req.user.id } } },
     orderBy: [{ totalValue: "desc" }, { createdAt: "desc" }],
-    take: limit,
+    // เงื่อนไขที่เหลือ (เควสที่ต้องทำก่อน, ทีมปิดรับ) เช็คได้หลังโหลด จึงต้องดึงมาทั้งหมดก่อนค่อยตัดเหลือ limit
+    ...(onlyAvailable ? {} : { take: limit }),
   });
 
-  res.json({ data: await withAvailability(quests, req.user) });
+  const data = await withAvailability(quests, req.user);
+  res.json({
+    data: onlyAvailable ? data.filter((q) => q.availability.state === "AVAILABLE").slice(0, limit) : data,
+  });
 };
 
 // ------------------------ DETAIL ------------------------

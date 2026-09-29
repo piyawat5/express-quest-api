@@ -156,6 +156,18 @@ export const deleteProgress = async (req, res) => {
   res.json({ message: "ลบรายการเรียบร้อย" });
 };
 
+// ------------------------ NOTE ------------------------
+// PUT /run/:id/note  { note }  สมุดจดของรอบนี้ ผู้ร่วมทำแก้ได้ทุกสถานะ (หน้าเว็บยิงตอน blur)
+export const updateRunNote = async (req, res) => {
+  const { run, isMember } = await findRunForUser(req.params.id, req.user);
+  assertMember(isMember);
+
+  const note = req.body.note?.trim() ? req.body.note : null;
+  await prisma.questRun.update({ where: { id: run.id }, data: { note } });
+
+  res.json({ message: "บันทึกแล้ว" });
+};
+
 // ------------------------ WORKFLOW ------------------------
 // POST /run/:id/submit  { note, attachments }  กดทำเสร็จ -> รอตรวจสอบ
 export const submitRun = async (req, res) => {
